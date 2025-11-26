@@ -1,134 +1,566 @@
 # Local RAG System
 
-A Retrieval-Augmented Generation (RAG) system for querying website documentation using local LLMs and vector databases.
+A production-ready Retrieval-Augmented Generation (RAG) system for indexing and querying website content using local LLMs and vector databases. Built with Scrapy for robust web crawling, Qdrant for vector search, and Ollama for local LLM inference.
 
 ## Features
 
-- **Local LLM Inference**: Uses Ollama with Llama 3.2 or Mistral models
-- **Local Embeddings**: sentence-transformers for fast, local embedding generation
-- **Vector Database**: Qdrant for efficient semantic search
-- **Web Scraping**: Extract content from static HTML websites
-- **Interactive UI**: Streamlit-based chat interface
-- **Source Citations**: Transparent answers with source attribution
+- **Automatic Web Crawling**: Scrapy-based crawler that automatically discovers and indexes entire websites
+- **Local LLM Inference**: Uses Ollama with Llama 3.2, Mistral, or other local models
+- **Local Embeddings**: sentence-transformers for fast, privacy-preserving embedding generation
+- **Vector Database**: Qdrant for efficient semantic search and retrieval
+- **Image Extraction**: Downloads and indexes images with metadata (alt text, captions)
+- **Interactive UI**: Streamlit-based chat interface with real-time responses
+- **Source Citations**: Transparent answers with clickable source URLs
 - **Follow-up Questions**: AI-generated contextual follow-up suggestions
-- **Docker Support**: Containerized Qdrant and Ollama services
+- **Docker Support**: Containerized Qdrant and Ollama services for easy deployment
+- **JSON Export**: Each page saved as structured JSON for inspection and re-indexing
 
 ## Tech Stack
 
-- **Python 3.8+**
-- **LangChain**: Document processing and text splitting
-- **sentence-transformers**: Local embedding generation
-- **Qdrant**: Vector database
-- **Ollama**: Local LLM inference
-- **Streamlit**: Web UI
-- **BeautifulSoup4**: Web scraping
+### Core Technologies
+- **Python 3.12+** - Modern Python with type hints
+- **Scrapy 2.11.0** - Professional-grade web crawling framework
+- **LangChain 0.1.0** - Document processing and RAG orchestration
+- **sentence-transformers 2.2.2** - Local embedding generation (384-768 dimensions)
+- **Qdrant 1.7.0** - High-performance vector database
+- **Ollama 0.1.6** - Local LLM inference server
+- **Streamlit 1.29.0** - Interactive web UI framework
+- **Pillow 10.1.0** - Image processing and metadata extraction
+
+### Supporting Libraries
+- **PyTorch** - Deep learning framework (via sentence-transformers)
+- **lxml** - Fast XML/HTML parsing
+- **Twisted** - Asynchronous networking (Scrapy dependency)
+- **python-dotenv** - Environment variable management
+- **tqdm** - Progress bars for long-running operations
+
+## Architecture
+
+### System Overview
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Local RAG System                          │
+└─────────────────────────────────────────────────────────────────┘
+                                 │
+                ┌────────────────┼────────────────┐
+                │                │                │
+         ┌──────▼──────┐  ┌─────▼─────┐  ┌──────▼──────┐
+         │   Indexing  │  │  Storage  │  │   Query     │
+         │   Pipeline  │  │   Layer   │  │  Pipeline   │
+         └─────────────┘  └───────────┘  └─────────────┘
+```
+
+### 1. Indexing Pipeline (One-Time Setup)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      INDEXING PIPELINE                            │
+└─────────────────────────────────────────────────────────────────┘
+
+Step 1: Web Crawling (Scrapy)
+────────────────────────────────────────────────────────────────
+    Target URL
+        │
+        ▼
+    ┌─────────────────┐
+    │  BlogSpider     │  • Automatic link discovery
+    │  (CrawlSpider)  │  • Same-domain filtering
+    │                 │  • Robots.txt compliance
+    └────────┬────────┘  • Rate limiting (1s delay)
+             │
+             ▼
+    ┌─────────────────┐
+    │ Link Extractor  │  • Follows <a> tags
+    │                 │  • Excludes external domains
+    └────────┬────────┘  • Deduplicates URLs
+             │
+             ▼
+
+Step 2: Content Extraction
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │  parse_page()   │  • Extracts <title>
+    │                 │  • Prioritizes <main>, <article>
+    │                 │  • Removes nav, footer, scripts
+    └────────┬────────┘  • Normalizes whitespace
+             │
+             ├──────────────────────┐
+             │                      │
+             ▼                      ▼
+    ┌─────────────────┐    ┌──────────────────┐
+    │  Text Content   │    │ Image Extraction │
+    │                 │    │                  │
+    │ • Title         │    │ • Image URLs     │
+    │ • Main text     │    │ • Alt text       │
+    │ • Cleaned HTML  │    │ • Captions       │
+    └────────┬────────┘    │ • Titles         │
+             │             └────────┬──────────┘
+             │                      │
+             ▼                      ▼
+    ┌─────────────────┐    ┌──────────────────┐
+    │ BlogPageItem    │    │ ImagesPipeline   │
+    │                 │◄───│                  │
+    │ • url           │    │ Downloads images │
+    │ • title         │    │ to disk          │
+    │ • text          │    └──────────────────┘
+    │ • images[]      │
+    │ • scraped_at    │
+    └────────┬────────┘
+             │
+             ▼
+
+Step 3: Data Persistence
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │ JsonExportPipe  │  Saves to: scraped_data/
+    │                 │  Format: {url_path}.json
+    └────────┬────────┘  One file per page
+             │
+             ▼
+    ┌─────────────────┐
+    │  JSON Files     │
+    │  ├─ index.json  │
+    │  ├─ about.json  │
+    │  └─ post1.json  │
+    └────────┬────────┘
+             │
+             ▼
+
+Step 4: Text Processing (LangChain)
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │ DocumentLoader  │  Loads JSON documents
+    └────────┬────────┘
+             │
+             ▼
+    ┌─────────────────┐
+    │ TextSplitter    │  • Recursive character splitting
+    │                 │  • Chunk size: 1000 tokens
+    │                 │  • Overlap: 200 tokens
+    └────────┬────────┘  • Preserves context
+             │
+             ▼
+    [Chunk 1] [Chunk 2] [Chunk 3] ... [Chunk N]
+
+Step 5: Embedding Generation (sentence-transformers)
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │ Embedding Model │  Model: all-MiniLM-L6-v2
+    │                 │  Dimensions: 384
+    │ (Local CPU/GPU) │  Speed: ~500 docs/sec (CPU)
+    └────────┬────────┘  Batch size: 32
+             │
+             ▼
+    [Vector 1] [Vector 2] [Vector 3] ... [Vector N]
+    (384-dim)  (384-dim)  (384-dim)      (384-dim)
+
+Step 6: Vector Storage (Qdrant)
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │ Qdrant Client   │  • HNSW index for fast search
+    │                 │  • Cosine similarity metric
+    │ Collection:     │  • Metadata: url, title, text
+    │ "website_docs"  │  • Persistent storage
+    └─────────────────┘
+```
+
+### 2. Query Pipeline (Real-Time)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                        QUERY PIPELINE                             │
+└─────────────────────────────────────────────────────────────────┘
+
+Step 1: User Input
+────────────────────────────────────────────────────────────────
+    User Question: "How do I configure the scraper?"
+                            │
+                            ▼
+
+Step 2: Query Embedding
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │ Same Embedding  │  • Uses SAME model as indexing
+    │ Model           │  • all-MiniLM-L6-v2
+    │                 │  • Ensures consistency
+    └────────┬────────┘
+             │
+             ▼
+    Query Vector (384-dim)
+
+Step 3: Semantic Search (Qdrant)
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │ Vector Search   │  • Cosine similarity
+    │                 │  • Top-K retrieval (K=5)
+    │ HNSW Algorithm  │  • Sub-millisecond search
+    └────────┬────────┘  • Score threshold: 0.7
+             │
+             ▼
+    [Result 1: 0.92] [Result 2: 0.87] ... [Result 5: 0.75]
+         │                 │                     │
+         └─────────────────┴─────────────────────┘
+                           │
+                           ▼
+
+Step 4: Context Assembly
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │ RAG Engine      │  • Combines top results
+    │                 │  • Preserves source URLs
+    │ Retrieved Docs: │  • Formats as context
+    │ • Doc 1 + URL   │  • Deduplicates content
+    │ • Doc 2 + URL   │
+    │ • Doc 3 + URL   │
+    └────────┬────────┘
+             │
+             ▼
+    Context: "From {url1}: content... From {url2}: content..."
+
+Step 5: LLM Generation (Ollama)
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │  Ollama LLM     │  Model: llama3.2 or mistral
+    │                 │
+    │ Prompt:         │  Temperature: 0.7
+    │ "Context:       │  Max tokens: 512
+    │  {context}      │  Streaming: Yes
+    │                 │
+    │  Question:      │  System prompt: Answer based
+    │  {question}     │  on context, cite sources
+    │                 │
+    │  Answer:"       │
+    └────────┬────────┘
+             │
+             ▼
+    Generated Answer with inline citations
+
+Step 6: Follow-up Generation
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │ Follow-up Gen   │  • Analyzes conversation
+    │                 │  • Suggests 3 questions
+    │ Based on:       │  • Context-aware
+    │ • Question      │  • Encourages exploration
+    │ • Answer        │
+    │ • Context       │
+    └────────┬────────┘
+             │
+             ▼
+    ["What about X?", "How does Y work?", "Can you explain Z?"]
+
+Step 7: UI Display (Streamlit)
+────────────────────────────────────────────────────────────────
+    ┌─────────────────┐
+    │ Streamlit App   │  • Streaming display
+    │                 │  • Clickable sources
+    │ Displays:       │  • Follow-up buttons
+    │ • Answer        │  • Chat history
+    │ • Sources       │  • Model selection
+    │ • Follow-ups    │
+    └─────────────────┘
+```
+
+### 3. Data Flow Diagram
+
+```
+                    ┌─────────────────────┐
+                    │   Target Website    │
+                    └──────────┬──────────┘
+                               │
+                               │ HTTP Requests
+                               ▼
+                    ┌─────────────────────┐
+                    │  Scrapy Spider      │
+                    │  - BlogSpider       │
+                    │  - LinkExtractor    │
+                    └──────────┬──────────┘
+                               │
+              ┌────────────────┼────────────────┐
+              │                │                │
+              ▼                ▼                ▼
+    ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+    │   Images    │  │    Text     │  │  Metadata   │
+    │ Pipeline    │  │  Content    │  │  (URLs)     │
+    └──────┬──────┘  └──────┬──────┘  └──────┬──────┘
+           │                │                │
+           ▼                ▼                ▼
+    ┌─────────────────────────────────────────────┐
+    │         JSON Files (scraped_data/)          │
+    │  ┌─────────┐ ┌─────────┐ ┌─────────┐       │
+    │  │ page1   │ │ page2   │ │ page3   │  ...  │
+    │  └─────────┘ └─────────┘ └─────────┘       │
+    └────────────────────┬────────────────────────┘
+                         │
+                         │ Load & Process
+                         ▼
+              ┌──────────────────────┐
+              │   Document Loader    │
+              │   (LangChain)        │
+              └──────────┬───────────┘
+                         │
+                         │ Split into chunks
+                         ▼
+              ┌──────────────────────┐
+              │   Text Splitter      │
+              │   (1000/200 tokens)  │
+              └──────────┬───────────┘
+                         │
+                         │ [Chunk 1, Chunk 2, ...]
+                         ▼
+              ┌──────────────────────┐
+              │  Embedding Model     │
+              │  (sentence-trans.)   │
+              └──────────┬───────────┘
+                         │
+                         │ [Vector 1, Vector 2, ...]
+                         ▼
+              ┌──────────────────────┐
+              │   Qdrant Database    │
+              │   Collection:        │
+              │   "website_docs"     │
+              └──────────┬───────────┘
+                         │
+                         │ Query time
+                         │
+        ┌────────────────┴────────────────┐
+        │                                 │
+        ▼                                 ▼
+┌───────────────┐              ┌──────────────────┐
+│ User Question │              │   Streamlit UI   │
+└───────┬───────┘              └──────────────────┘
+        │                                ▲
+        │ Embed query                    │
+        ▼                                │
+┌───────────────┐                        │
+│ Query Vector  │                        │
+└───────┬───────┘                        │
+        │                                │
+        │ Search                         │
+        ▼                                │
+┌───────────────┐                        │
+│ Top-K Results │                        │
+│ (with URLs)   │                        │
+└───────┬───────┘                        │
+        │                                │
+        │ Format context                 │
+        ▼                                │
+┌───────────────┐                        │
+│  Ollama LLM   │                        │
+│  (llama3.2)   │                        │
+└───────┬───────┘                        │
+        │                                │
+        │ Generate answer                │
+        └────────────────────────────────┘
+```
 
 ## Project Structure
 
 ```
 localrag/
 ├── docker-compose.yml          # Qdrant + Ollama services
+├── pyproject.toml              # Python project configuration
 ├── requirements.txt            # Python dependencies
+├── uv.lock                     # UV dependency lock file
 ├── .env.example               # Environment template
+├── .gitignore                 # Git ignore rules
 ├── README.md                  # This file
+├── SCRAPER_USAGE.md           # Detailed scraper guide
+│
 ├── config/
-│   └── settings.py           # Centralized configuration
+│   ├── __init__.py
+│   └── settings.py            # Centralized configuration
+│                              # - Qdrant settings
+│                              # - Ollama settings
+│                              # - Embedding config
+│                              # - Scraping config
+│
 ├── indexer/
-│   ├── scraper.py           # Web scraping
-│   ├── processor.py         # Chunking & vectorization
-│   └── run_indexing.py      # Main indexing script
-└── app/
-    ├── rag_engine.py        # RAG query logic
-    └── streamlit_app.py     # Streamlit UI
+│   ├── __init__.py
+│   ├── scraper.py            # Scrapy-based web crawler
+│   │                         # - BlogSpider (CrawlSpider)
+│   │                         # - BlogImagesPipeline
+│   │                         # - JsonExportPipeline
+│   │                         # - ScrapyBlogScraper
+│   │
+│   ├── processor.py          # Document processing
+│   │                         # - Text chunking (LangChain)
+│   │                         # - Embedding generation
+│   │                         # - Qdrant indexing
+│   │
+│   └── run_indexing.py       # Main indexing script
+│                             # - Interactive CLI
+│                             # - Programmatic API
+│                             # - JSON re-indexing
+│
+├── app/
+│   ├── __init__.py
+│   ├── rag_engine.py         # RAG query logic
+│   │                         # - Query embedding
+│   │                         # - Semantic search
+│   │                         # - LLM generation
+│   │                         # - Follow-up generation
+│   │
+│   └── streamlit_app.py      # Streamlit UI
+│                             # - Chat interface
+│                             # - Model selection
+│                             # - Source display
+│                             # - Follow-up buttons
+│
+├── scraped_data/             # JSON output (gitignored)
+│   ├── index.json
+│   ├── about.json
+│   └── blog_post.json
+│
+└── scraped_images/           # Downloaded images (gitignored)
+    └── full/
+        ├── abc123.jpg
+        └── def456.png
 ```
 
 ## Installation
 
-### 1. Prerequisites
+### Prerequisites
 
-- Python 3.8 or higher
-- Docker and Docker Compose
-- Git
+- **Python 3.12+** (3.8+ works but 3.12 recommended)
+- **Docker and Docker Compose** for Qdrant and Ollama
+- **Git** for version control
+- **10GB+ free disk space** (for models and data)
+- **8GB+ RAM** recommended (4GB minimum)
 
-### 2. Clone or Setup Project
+### Step 1: Clone or Setup Project
 
 ```bash
 cd localrag
 ```
 
-### 3. Install Python Dependencies
+### Step 2: Install Python Dependencies
 
+Using UV (recommended):
+```bash
+uv sync
+```
+
+Or using pip:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment
+### Step 3: Configure Environment
 
 ```bash
 cp .env.example .env
 ```
 
-Edit `.env` if you want to customize settings (optional).
+Edit `.env` to configure your target website:
+```env
+# Required: Set your target blog/website URL
+TARGET_WEBSITE_URL=https://yourblog.com
 
-### 5. Start Docker Services
+# Optional: Customize scraping behavior
+SCRAPER_DELAY=1.0
+SCRAPED_DATA_DIR=scraped_data
+SCRAPED_IMAGES_DIR=scraped_images
+
+# Optional: Customize RAG behavior
+EMBEDDING_MODEL=all-MiniLM-L6-v2
+CHUNK_SIZE=1000
+CHUNK_OVERLAP=200
+TOP_K_RESULTS=5
+```
+
+### Step 4: Start Docker Services
 
 ```bash
 docker-compose up -d
 ```
 
 This starts:
-- **Qdrant** on port 6333
-- **Ollama** on port 11434
+- **Qdrant** on port 6333 (vector database)
+- **Ollama** on port 11434 (LLM server)
 
 Verify services are running:
 ```bash
 docker-compose ps
 ```
 
-### 6. Pull Ollama Models
+Expected output:
+```
+NAME          IMAGE                    STATUS
+qdrant        qdrant/qdrant:latest     Up
+ollama        ollama/ollama:latest     Up
+```
+
+### Step 5: Pull Ollama Models
 
 Pull the LLM models you want to use:
 
 ```bash
-# Pull Llama 3.2
+# Pull Llama 3.2 (recommended, ~2GB)
 docker exec ollama ollama pull llama3.2
 
-# Pull Mistral (optional)
+# Pull Mistral (alternative, ~4GB)
 docker exec ollama ollama pull mistral
+
+# List available models
+docker exec ollama ollama list
 ```
 
 ## Usage
 
-### Step 1: Index Website Content (One-Time)
+### Method 1: Automatic Website Crawling (Recommended)
 
-Run the indexing script to scrape, chunk, and vectorize your website content:
+The new Scrapy-based scraper automatically discovers and crawls all pages on a website:
 
 ```bash
-python indexer/run_indexing.py
+python -m indexer.run_indexing
 ```
 
-You'll be prompted to enter:
-1. **Base website URL** (e.g., `https://docs.example.com`)
-2. **List of page URLs** to index (one per line, press Enter twice when done)
-
-Example:
+You'll see:
 ```
-Enter the base website URL: https://python.langchain.com
-Enter the list of page URLs to index (one per line):
-https://python.langchain.com/docs/introduction
-https://python.langchain.com/docs/use_cases/question_answering
-https://python.langchain.com/docs/modules/data_connection/vectorstores
+==================================================
+RAG System - Website Indexing Pipeline (Scrapy)
+==================================================
+Current Configuration:
+...
+Target Website: https://yourblog.com
 
-[Press Enter twice to finish]
+The crawler will automatically discover and scrape all pages
+on the target website (same domain only).
+
+Proceed with crawling and indexing? (yes/no):
 ```
 
-The script will:
-1. Scrape the specified pages
-2. Split content into chunks
-3. Generate embeddings using sentence-transformers
-4. Store in Qdrant vector database
+Type `yes` and the crawler will:
+1. Start at the target URL
+2. Automatically discover all internal links
+3. Extract text content and images from each page
+4. Download images with metadata
+5. Save each page as JSON
+6. Process and index everything into Qdrant
 
-### Step 2: Launch the RAG Application
+### Method 2: Programmatic Crawling
+
+```python
+from indexer.run_indexing import index_from_url
+
+# Crawl and index entire website
+index_from_url("https://docs.example.com")
+```
+
+### Method 3: Re-index from Existing JSON
+
+If you've already scraped a website and want to re-index:
+
+```python
+from indexer.run_indexing import index_from_json
+
+# Re-index from scraped JSON files
+index_from_json("scraped_data")
+```
+
+### Launch the RAG Application
 
 Start the Streamlit web app:
 
@@ -138,153 +570,329 @@ streamlit run app/streamlit_app.py
 
 The app will open in your browser at `http://localhost:8501`
 
-### Step 3: Ask Questions
+### Using the Application
 
-1. Select your preferred LLM model from the sidebar (Llama 3.2 or Mistral)
-2. Type your question in the chat input
-3. View the AI-generated answer with source citations
-4. Click on follow-up questions for deeper exploration
+1. **Select Model**: Choose Llama 3.2 or Mistral from the sidebar
+2. **Ask Questions**: Type your question in the chat input
+3. **View Answers**: See AI-generated answers with source citations
+4. **Explore Sources**: Click on source URLs to visit original pages
+5. **Follow-up**: Click suggested follow-up questions for deeper exploration
+6. **Clear History**: Use sidebar button to start fresh conversation
 
-## Advanced Usage
+## Advanced Configuration
 
-### Programmatic Indexing
-
-You can also index documents programmatically:
-
-```python
-from indexer.run_indexing import index_from_list
-
-base_url = "https://docs.example.com"
-urls = [
-    "https://docs.example.com/guide/intro",
-    "https://docs.example.com/guide/setup",
-    "https://docs.example.com/api/reference"
-]
-
-index_from_list(base_url, urls)
-```
-
-### Custom Configuration
-
-Edit `.env` to customize:
-
-```env
-# Embedding model (options: all-MiniLM-L6-v2, all-mpnet-base-v2)
-EMBEDDING_MODEL=all-MiniLM-L6-v2
-
-# Chunking parameters
-CHUNK_SIZE=1000
-CHUNK_OVERLAP=200
-
-# RAG parameters
-TOP_K_RESULTS=5
-TEMPERATURE=0.7
-MAX_TOKENS=512
-```
-
-### Using Different Embedding Models
+### Embedding Models
 
 Available sentence-transformers models:
-- `all-MiniLM-L6-v2` (default) - Fast, 384 dimensions
-- `all-mpnet-base-v2` - Higher quality, 768 dimensions
-- `multi-qa-MiniLM-L6-cos-v1` - Optimized for Q&A
+
+| Model | Dimensions | Speed | Quality | Use Case |
+|-------|-----------|-------|---------|----------|
+| `all-MiniLM-L6-v2` | 384 | Fast | Good | Default, balanced |
+| `all-mpnet-base-v2` | 768 | Medium | Better | Higher quality |
+| `multi-qa-MiniLM-L6-cos-v1` | 384 | Fast | Good | Q&A optimized |
 
 Change in `.env`:
 ```env
 EMBEDDING_MODEL=all-mpnet-base-v2
 ```
 
-**Note**: After changing the embedding model, you must re-run the indexing process.
+**Important**: After changing embedding model, re-run indexing!
+
+### Chunking Strategy
+
+Adjust chunk size and overlap for different content types:
+
+| Content Type | Chunk Size | Overlap | Rationale |
+|-------------|-----------|---------|-----------|
+| Technical docs | 1000 | 200 | Default, preserves context |
+| Blog posts | 1500 | 300 | Longer content, more overlap |
+| API docs | 500 | 100 | Short, focused chunks |
+| Narrative content | 2000 | 400 | Long-form content |
+
+Edit in `.env`:
+```env
+CHUNK_SIZE=1000
+CHUNK_OVERLAP=200
+```
+
+### Scraping Customization
+
+Edit `indexer/scraper.py` to customize crawling behavior:
+
+```python
+# Exclude certain URL patterns
+rules = (
+    Rule(
+        LinkExtractor(
+            allow=(),
+            deny=(r'/tag/', r'/category/', r'/admin/'),
+        ),
+        callback='parse_page',
+        follow=True
+    ),
+)
+
+# Adjust crawl delay
+DOWNLOAD_DELAY = 2.0  # 2 seconds between requests
+
+# Increase concurrent requests (use carefully!)
+CONCURRENT_REQUESTS_PER_DOMAIN = 2
+```
+
+### RAG Parameters
+
+Fine-tune retrieval and generation:
+
+```env
+# Number of chunks to retrieve
+TOP_K_RESULTS=5
+
+# LLM creativity (0.0-1.0)
+TEMPERATURE=0.7
+
+# Maximum response length
+MAX_TOKENS=512
+```
+
+## Scraped Data Structure
+
+Each page is saved as JSON in `scraped_data/`:
+
+```json
+{
+  "url": "https://example.com/blog/post-title",
+  "title": "Post Title Here",
+  "text": "Full extracted text content with normalized whitespace...",
+  "images": [
+    {
+      "url": "https://example.com/images/photo.jpg",
+      "local_path": "full/abc123def456.jpg",
+      "alt": "Photo description from alt attribute",
+      "title": "Photo title from title attribute",
+      "caption": "Figure caption if available"
+    }
+  ],
+  "scraped_at": "2025-11-24T12:34:56.789012"
+}
+```
+
+Images are downloaded to `scraped_images/full/` with content-hashed filenames.
 
 ## Troubleshooting
 
+### Dependencies Installation Slow
+
+The first `uv sync` or `pip install` can take 5-10 minutes due to large ML packages:
+- PyTorch (~800MB)
+- CUDA libraries (~3GB total for GPU support)
+- sentence-transformers models (downloaded on first use)
+
+This is normal. Subsequent installs use cached packages.
+
 ### Ollama Connection Error
 
-If you see "Error generating answer: connection refused":
+**Error**: `Error generating answer: connection refused`
 
-1. Check if Ollama container is running:
+**Solutions**:
+1. Check Ollama is running:
    ```bash
    docker-compose ps
+   curl http://localhost:11434/api/tags
    ```
 
-2. Pull the model if not already available:
+2. Pull the model:
    ```bash
    docker exec ollama ollama pull llama3.2
    ```
 
-3. Test Ollama directly:
+3. Check model is loaded:
    ```bash
-   curl http://localhost:11434/api/tags
+   docker exec ollama ollama list
    ```
 
 ### Qdrant Connection Error
 
-1. Check if Qdrant container is running:
+**Error**: `Failed to connect to Qdrant`
+
+**Solutions**:
+1. Verify Qdrant is running:
    ```bash
    docker-compose ps
    ```
 
-2. Access Qdrant UI at http://localhost:6333/dashboard
+2. Access Qdrant dashboard: http://localhost:6333/dashboard
 
 3. Restart services:
    ```bash
-   docker-compose restart
+   docker-compose restart qdrant
    ```
 
-### No Documents Found
+4. Check collection exists:
+   ```bash
+   curl http://localhost:6333/collections/website_docs
+   ```
 
-If the indexing script doesn't find content:
+### Scraper Finds No Pages
 
-1. Check if the URLs are accessible
-2. Verify the website doesn't require JavaScript rendering
-3. Check scraper logs for errors
+**Issue**: Crawler only finds 1 page or stops early
+
+**Causes & Solutions**:
+1. **Robots.txt blocking**: Check `https://yoursite.com/robots.txt`
+   - Solution: Set `ROBOTSTXT_OBEY = False` in `scraper.py` (use responsibly!)
+
+2. **JavaScript-heavy site**: Scrapy doesn't render JS
+   - Solution: Use Scrapy-Splash or Selenium for JS-rendered sites
+
+3. **Different domain**: Links point to external sites
+   - Solution: Check `allowed_domains` in spider output
+
+4. **Links not in `<a>` tags**: Some sites use JS navigation
+   - Solution: Manually provide URL list or use browser automation
 
 ### Memory Issues
 
-If you encounter memory issues with large datasets:
+**Issue**: System runs out of memory during indexing
 
-1. Reduce `CHUNK_SIZE` in `.env`
-2. Index fewer pages at a time
-3. Use a smaller embedding model (e.g., `all-MiniLM-L6-v2`)
+**Solutions**:
+1. Reduce chunk size:
+   ```env
+   CHUNK_SIZE=500
+   ```
 
-## Architecture
+2. Use smaller embedding model:
+   ```env
+   EMBEDDING_MODEL=all-MiniLM-L6-v2
+   ```
 
-### Indexing Pipeline
+3. Index in batches:
+   ```python
+   # Scrape first, then index later
+   from indexer.run_indexing import index_from_json
+   index_from_json("scraped_data")
+   ```
 
+4. Close other applications
+5. Increase Docker memory limit in Docker Desktop settings
+
+### Scrapy ImportError
+
+**Error**: `ModuleNotFoundError: No module named 'scrapy'`
+
+**Solution**:
+Dependencies are still installing. Wait for `uv sync` to complete, then try again.
+
+## Performance Optimization
+
+### GPU Acceleration
+
+If you have an NVIDIA GPU:
+
+1. Install NVIDIA Docker runtime
+2. Modify `docker-compose.yml`:
+   ```yaml
+   ollama:
+     image: ollama/ollama:latest
+     deploy:
+       resources:
+         reservations:
+           devices:
+             - driver: nvidia
+               count: 1
+               capabilities: [gpu]
+   ```
+
+3. Restart Ollama:
+   ```bash
+   docker-compose up -d ollama
+   ```
+
+### Embedding Performance
+
+- **CPU**: ~100-500 docs/sec (depends on CPU)
+- **GPU**: ~1000-5000 docs/sec with CUDA
+- **Batch size**: Increase to 64 for faster processing (more memory)
+
+### Query Performance
+
+- **Qdrant search**: <10ms for most collections
+- **LLM generation**: 1-5 seconds depending on model and length
+- **Embedding**: <50ms per query
+
+### Scaling for Large Sites
+
+For websites with 10,000+ pages:
+
+1. **Use disk-based Qdrant** (default is in-memory)
+2. **Implement incremental indexing** (only index new/changed pages)
+3. **Consider distributed crawling** with Scrapy Cloud or Scrapyd
+4. **Use compression** for JSON storage
+5. **Implement caching** for frequently accessed documents
+
+## Development
+
+### Running Tests
+
+```bash
+# Install dev dependencies
+pip install pytest pytest-cov
+
+# Run tests
+pytest
+
+# With coverage
+pytest --cov=. --cov-report=html
 ```
-Website URLs
-    ↓
-Web Scraper (BeautifulSoup)
-    ↓
-Text Chunking (LangChain)
-    ↓
-Embedding Generation (sentence-transformers)
-    ↓
-Vector Storage (Qdrant)
+
+### Code Quality
+
+```bash
+# Format code
+black .
+
+# Lint
+flake8 .
+pylint app/ indexer/ config/
+
+# Type checking
+mypy .
 ```
 
-### Query Pipeline
+### Adding New Features
 
+1. Create feature branch: `git checkout -b feature/my-feature`
+2. Make changes
+3. Test locally
+4. Submit pull request
+
+## Deployment
+
+### Docker Production Deployment
+
+Build custom image with your code:
+
+```dockerfile
+FROM python:3.12-slim
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+
+COPY . .
+
+CMD ["streamlit", "run", "app/streamlit_app.py"]
 ```
-User Question
-    ↓
-Query Embedding (sentence-transformers)
-    ↓
-Semantic Search (Qdrant)
-    ↓
-Context Retrieval
-    ↓
-LLM Answer Generation (Ollama)
-    ↓
-Follow-up Question Generation
+
+### Environment Variables for Production
+
+```env
+# Use production URLs
+QDRANT_HOST=qdrant.yourdomain.com
+OLLAMA_HOST=https://ollama.yourdomain.com
+
+# Security
+STREAMLIT_SERVER_PORT=8501
+STREAMLIT_SERVER_ADDRESS=0.0.0.0
 ```
-
-## Performance Tips
-
-1. **Use GPU**: If available, Ollama will automatically use GPU acceleration
-2. **Batch Processing**: The indexer processes embeddings in batches of 32
-3. **Caching**: sentence-transformers caches models locally after first download
-4. **Model Selection**: Llama 3.2 is faster but Mistral may give better answers
 
 ## License
 
@@ -292,12 +900,49 @@ MIT License - feel free to use for personal or commercial projects.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit issues or pull requests.
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+See `CONTRIBUTING.md` for detailed guidelines (if available).
 
 ## Acknowledgments
 
-- [LangChain](https://www.langchain.com/) for document processing
-- [sentence-transformers](https://www.sbert.net/) for embeddings
-- [Qdrant](https://qdrant.tech/) for vector search
-- [Ollama](https://ollama.ai/) for local LLM inference
-- [Streamlit](https://streamlit.io/) for the UI framework
+- [Scrapy](https://scrapy.org/) - Fast, powerful web scraping framework
+- [LangChain](https://www.langchain.com/) - Document processing and RAG orchestration
+- [sentence-transformers](https://www.sbert.net/) - State-of-the-art embeddings
+- [Qdrant](https://qdrant.tech/) - High-performance vector search
+- [Ollama](https://ollama.ai/) - Easy local LLM deployment
+- [Streamlit](https://streamlit.io/) - Fast web app framework
+
+## Support
+
+- **Documentation**: See `SCRAPER_USAGE.md` for detailed scraper guide
+- **Issues**: Report bugs or request features on GitHub Issues
+- **Discussions**: Join community discussions on GitHub Discussions
+
+## Roadmap
+
+Planned features:
+
+- [ ] Multi-language support for embeddings
+- [ ] PDF and DOCX scraping support
+- [ ] Advanced filters in UI (date range, source filtering)
+- [ ] Export chat history
+- [ ] API endpoint for programmatic access
+- [ ] Incremental indexing (only update changed pages)
+- [ ] Multi-site indexing with namespace support
+- [ ] Image search using vision models
+
+## Version History
+
+- **v0.2.0** (Current) - Scrapy integration, automatic crawling, image extraction
+- **v0.1.0** - Initial release with BeautifulSoup scraper
+
+---
+
+Built with ❤️ for the open-source community

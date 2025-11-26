@@ -54,3 +54,7 @@ logs/
 # Docker volumes (if any local data)
 qdrant_storage/
 ollama_data/
+
+# Scraped data
+scraped_data/
+scraped_images/

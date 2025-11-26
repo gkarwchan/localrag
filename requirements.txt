@@ -15,8 +15,8 @@ sentence-transformers==2.2.2
 ollama==0.1.6
 
 # Web Scraping
-requests==2.31.0
-beautifulsoup4==4.12.2
+scrapy==2.11.0
+pillow==10.1.0
 lxml==5.1.0
 
 # Text Processing

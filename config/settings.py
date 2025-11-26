@@ -33,6 +33,16 @@ class Settings:
     TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
     MAX_TOKENS = int(os.getenv("MAX_TOKENS", "512"))
 
+    # Web Scraping Configuration
+    TARGET_WEBSITE_URL = os.getenv("TARGET_WEBSITE_URL", "")
+    SCRAPER_DELAY = float(os.getenv("SCRAPER_DELAY", "1.0"))
+    SCRAPER_USER_AGENT = os.getenv(
+        "SCRAPER_USER_AGENT",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    )
+    SCRAPED_DATA_DIR = os.getenv("SCRAPED_DATA_DIR", "scraped_data")
+    SCRAPED_IMAGES_DIR = os.getenv("SCRAPED_IMAGES_DIR", "scraped_images")
+
     @classmethod
     def get_qdrant_url(cls):
         """Get the full Qdrant URL."""
@@ -52,6 +62,11 @@ class Settings:
         print(f"Chunk Size: {cls.CHUNK_SIZE}")
         print(f"Chunk Overlap: {cls.CHUNK_OVERLAP}")
         print(f"Top K Results: {cls.TOP_K_RESULTS}")
+        print(f"\nScraping Configuration:")
+        print(f"Target Website: {cls.TARGET_WEBSITE_URL or '(not set)'}")
+        print(f"Scraper Delay: {cls.SCRAPER_DELAY}s")
+        print(f"Scraped Data Dir: {cls.SCRAPED_DATA_DIR}")
+        print(f"Scraped Images Dir: {cls.SCRAPED_IMAGES_DIR}")
         print("=" * 50)
 
 
