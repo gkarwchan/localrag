@@ -8,15 +8,16 @@ langchain-community==0.0.10
 # Vector Database
 qdrant-client==1.7.0
 
-# Embeddings
-sentence-transformers==2.2.2
+# Embeddings (cloud-based option)
+sentence-transformers>=2.7.0
+openai>=1.0.0
 
-# Ollama Integration
+# Ollama Integration (local option)
 ollama==0.1.6
 
 # Web Scraping
 scrapy==2.11.0
-pillow==10.1.0
+pillow==10.4.0
 lxml==5.1.0
 
 # Text Processing

@@ -2,6 +2,7 @@
 Streamlit web application for the RAG system.
 Provides a chat interface for asking questions about indexed documentation.
 """
+from typing import List, Dict
 import streamlit as st
 from app.rag_engine import RAGEngine
 from config.settings import settings

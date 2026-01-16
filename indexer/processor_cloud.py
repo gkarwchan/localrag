@@ -1,26 +1,41 @@
 """
-Document processor for chunking and vectorization.
-Uses LangChain for text splitting and sentence-transformers for local embeddings.
+Cloud-based document processor using API embeddings.
+Uses Together.ai for embeddings (very cheap: $0.008/1M tokens).
 """
 from typing import List, Dict
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from sentence_transformers import SentenceTransformer
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from tqdm import tqdm
 import hashlib
+import os
+from openai import OpenAI
 
 from config.settings import settings
 
 
-class DocumentProcessor:
-    """Processor for chunking documents and creating embeddings."""
+class DocumentProcessorCloud:
+    """Processor for chunking documents and creating embeddings via API."""
 
     def __init__(self):
-        """Initialize the document processor with embedding model."""
-        print(f"Loading embedding model: {settings.EMBEDDING_MODEL}")
-        self.embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL)
-        self.embedding_dimension = self.embedding_model.get_sentence_embedding_dimension()
+        """Initialize the document processor with cloud embedding model."""
+
+        # Together.ai client (OpenAI-compatible)
+        self.embedding_client = OpenAI(
+            base_url="https://api.together.xyz/v1",
+            api_key=os.getenv("TOGETHER_API_KEY")
+        )
+
+        # Together.ai embedding model (very cheap)
+        self.embedding_model_name = os.getenv(
+            "CLOUD_EMBEDDING_MODEL",
+            "togethercomputer/m2-bert-80M-8k-retrieval"
+        )
+
+        # Dimension depends on model:
+        # m2-bert-80M-8k-retrieval: 768 dims
+        # WhereIsAI/UAE-Large-V1: 1024 dims
+        self.embedding_dimension = 768
 
         # Initialize text splitter
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -30,6 +45,7 @@ class DocumentProcessor:
             separators=["\n\n", "\n", ". ", " ", ""]
         )
 
+        print(f"Cloud embedding model: {self.embedding_model_name}")
         print(f"Embedding dimension: {self.embedding_dimension}")
         print(f"Chunk size: {settings.CHUNK_SIZE}, Overlap: {settings.CHUNK_OVERLAP}")
 
@@ -66,7 +82,7 @@ class DocumentProcessor:
 
     def create_embeddings(self, chunks: List[Dict[str, str]]) -> List[Dict]:
         """
-        Create embeddings for all chunks.
+        Create embeddings for all chunks using Together.ai API.
 
         Args:
             chunks: List of text chunks with metadata
@@ -74,22 +90,30 @@ class DocumentProcessor:
         Returns:
             List of chunks with embeddings
         """
-        print("\nGenerating embeddings...")
+        print("\nGenerating embeddings via API...")
+        print(f"Processing {len(chunks)} chunks...")
 
-        # Extract text for embedding
-        texts = [chunk['content'] for chunk in chunks]
+        # Process in batches to avoid rate limits
+        batch_size = 100
 
-        # Generate embeddings in batches
-        embeddings = self.embedding_model.encode(
-            texts,
-            show_progress_bar=True,
-            batch_size=32,
-            convert_to_numpy=True
-        )
+        for i in tqdm(range(0, len(chunks), batch_size), desc="Embedding batches"):
+            batch = chunks[i:i + batch_size]
+            texts = [chunk['content'] for chunk in batch]
 
-        # Attach embeddings to chunks
-        for chunk, embedding in zip(chunks, embeddings):
-            chunk['embedding'] = embedding.tolist()
+            try:
+                # Call Together.ai embeddings API
+                response = self.embedding_client.embeddings.create(
+                    input=texts,
+                    model=self.embedding_model_name
+                )
+
+                # Attach embeddings to chunks
+                for chunk, embedding_data in zip(batch, response.data):
+                    chunk['embedding'] = embedding_data.embedding
+
+            except Exception as e:
+                print(f"\nError generating embeddings for batch {i//batch_size}: {e}")
+                raise
 
         return chunks
 
@@ -101,10 +125,21 @@ class DocumentProcessor:
             chunks: List of chunks with embeddings and metadata
         """
         print("\nConnecting to Qdrant...")
-        client = QdrantClient(
-            host=settings.QDRANT_HOST,
-            port=settings.QDRANT_PORT
-        )
+
+        # Support both local and cloud Qdrant
+        qdrant_api_key = os.getenv("QDRANT_API_KEY")
+        if qdrant_api_key:
+            # Qdrant Cloud
+            client = QdrantClient(
+                url=f"https://{settings.QDRANT_HOST}:{settings.QDRANT_PORT}",
+                api_key=qdrant_api_key
+            )
+        else:
+            # Local Qdrant
+            client = QdrantClient(
+                host=settings.QDRANT_HOST,
+                port=settings.QDRANT_PORT
+            )
 
         collection_name = settings.QDRANT_COLLECTION_NAME
 
@@ -128,13 +163,8 @@ class DocumentProcessor:
         # Prepare points for insertion
         points = []
         for idx, chunk in enumerate(tqdm(chunks, desc="Preparing points")):
-            # Create a unique ID for each chunk
-            chunk_id = hashlib.md5(
-                f"{chunk['url']}_{chunk['chunk_index']}".encode()
-            ).hexdigest()
-
             point = PointStruct(
-                id=idx,  # Use index as ID for simplicity
+                id=idx,
                 vector=chunk['embedding'],
                 payload={
                     'content': chunk['content'],
@@ -178,7 +208,7 @@ class DocumentProcessor:
         # Step 1: Chunk documents
         chunks = self.chunk_documents(documents)
 
-        # Step 2: Create embeddings
+        # Step 2: Create embeddings via API
         chunks_with_embeddings = self.create_embeddings(chunks)
 
         # Step 3: Index to Qdrant
